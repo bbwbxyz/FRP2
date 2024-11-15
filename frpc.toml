@@ -1,0 +1,12 @@
+serverAddr = "free.frpee.com"
+serverPort = 7000
+user = "96618"
+metadatas.password = "95754"
+[[proxies]]
+name = "HTTP Server 192.168.1.8"
+type = "tcp"
+localIP = "192.168.1.8"
+localPort = 4455
+remotePort = 11438
+transport.useEncryption = true
+transport.useCompression = true
