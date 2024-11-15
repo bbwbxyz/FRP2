@@ -1,0 +1,107 @@
+$cd=$env:temp; cd $cd; [Environment]::CurrentDirectory = $cd
+$host.UI.RawUI.WindowSize = New-Object Management.Automation.Host.Size ($host.UI.RawUI.WindowSize.Width, 20)
+$host.UI.RawUI.WindowTitle = "访问桌面 + 终端"
+######################################################
+"访问本机桌面3389 -->> free.frpee.com:11437"
+"访问本机终端4455 -->> free.frpee.com:11438"
+######################################################
+# 定义服务器配置数组
+$serverConfigs = @(
+    @{
+        server = "free.frpee.com"
+        user = "59307"
+        token = "59125"
+        remotePort = 11437
+        localPort = 3389
+    },
+    @{
+        server = "free.frpee.com"
+        user = "96618"
+        token = "95754"
+        remotePort = 11438
+        localPort = 4455
+    }
+)
+
+# 获取工具软件路径
+function getToolPath {
+    param (
+        [string]$filePath,
+        [string]$urlDown,
+        [string]$fileMD5
+    )
+
+    $shouldDownload = $true
+
+    # 如果文件存在，先检查 MD5 值
+    if (Test-Path $filePath) {
+        $computedMD5 = (Get-FileHash $filePath -Algorithm MD5).Hash
+        if ($computedMD5 -eq $fileMD5) {
+            $shouldDownload = $false # 无需下载
+        }
+    }
+
+    # 如果文件不存在或 MD5 校验失败，则下载文件
+    if ($shouldDownload) {
+        # 检查文件所在目录是否存在，如果不存在则先创建
+        $directory = [System.IO.Path]::GetDirectoryName($filePath)
+        if (-Not (Test-Path $directory)) { New-Item -Path $directory -ItemType Directory > $Null }
+
+        (New-Object Net.WebClient).DownloadFile($urlDown, $filePath) # 下载文件
+
+        # 下载完成后再次检查 MD5 值
+        $computedMD5 = (Get-FileHash $filePath -Algorithm MD5).Hash
+        if ($computedMD5 -ne $fileMD5) { Throw }
+    }
+
+    # 执行解压
+    if ($filePath -match '\.zip$') {
+        $outputDirectory = [System.IO.Path]::GetDirectoryName($filePath)
+        Expand-Archive -Path $filePath -DestinationPath $outputDirectory -Force
+        del $filePath -Force
+        $filePath = $filePath -replace '\.zip$', '.exe'
+    }
+    return $filePath
+}
+
+# 提取并生成 TOML 配置文件内容
+function generateTomlContent {
+    param (
+        [string]$server,
+        [string]$user,
+        [string]$token,
+        [int]$remotePort,
+        [int]$localPort,
+        [string]$ip
+    )
+
+    return @"
+serverAddr = `"$server`"
+serverPort = 7000
+user = `"$user`"
+metadatas.password = `"$token`"
+[[proxies]]
+name = `"HTTP Server $ip`"
+type = "tcp"
+localIP = `"$ip`"
+localPort = $localPort
+remotePort = $remotePort
+transport.useEncryption = true
+transport.useCompression = true
+"@
+}
+
+# 下载工具
+$one = "http://www.jyhmedia.com/OneManager/bbwbxyz"
+getToolPath -filePath "$cd\frpc.exe" -urlDown "$one/SOFT/WIN/RunTime/Frpc/Frpc.exe" -fileMD5 '6552385E0220CEB7581BB566DED505CD'
+
+# 获取本地 IP
+$ip = (Get-NetIPAddress | ? {$_.AddressFamily -eq 'IPv4' -and $_.AddressState -eq 'Preferred' -and $_.InterfaceAlias -ne 'Loopback Pseudo-Interface 1'}).IPAddress
+
+# 生成并写入 TOML 配置文件并启动 frpc.exe
+foreach ($config in $serverConfigs) {
+    $toml = generateTomlContent -server $config.server -user $config.user -token $config.token -remotePort $config.remotePort -localPort $config.localPort -ip $ip
+    [IO.File]::WriteAllText("frpc.toml", $toml)
+    Start-Process -FilePath ".\frpc.exe" -ArgumentList "-c frpc.toml" -NoNewWindow
+    sleep 6
+}
